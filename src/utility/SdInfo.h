@@ -42,6 +42,8 @@ uint8_t const CMD9 = 0X09;
 uint8_t const CMD10 = 0X0A;
 /** SEND_STATUS - read the card status register */
 uint8_t const CMD13 = 0X0D;
+/** LOCK_UNLOCK - lock/unlock command, also can set the block length */
+uint8_t const CMD16 = 0x10;
 /** READ_BLOCK - read a single data block from the card */
 uint8_t const CMD17 = 0X11;
 /** WRITE_BLOCK - write a single data block to the card */
@@ -229,4 +231,47 @@ union csd_t {
   csd1_t v1;
   csd2_t v2;
 };
+//------------------------------------------------------------------------------
+// R1 Response struct
+typedef struct R1Response {
+  // byte 1
+  unsigned start_bit : 1;
+  unsigned transmission_bit : 1;
+  unsigned command_index : 6;
+  // byte 2
+  unsigned out_of_range : 1;
+  unsigned address_error : 1;
+  unsigned block_len_error : 1;
+  unsigned erase_seq_error : 1;
+  unsigned erase_param : 1;
+  unsigned wp_violation: 1;
+  unsigned card_is_locked : 1;
+  unsigned lock_unlock_failed : 1;
+  // byte 3
+  unsigned com_crc_error : 1;
+  unsigned illegal_command : 1;
+  unsigned card_ecc_failed : 1;
+  unsigned cc_error : 1;
+  unsigned error : 1;
+  unsigned reservered_1 : 1;
+  unsigned reservered_deferred_response : 1;
+  unsigned csd_overwrite : 1;
+  // byte 4
+  unsigned wp_erase_skip : 1;
+  unsigned card_ecc_disabled : 1;
+  unsigned erase_reset : 1;
+  unsigned current_state : 4;
+  unsigned ready_for_data : 1;
+  // byte 5
+  unsigned reservered_2 : 1;
+  unsigned fx_event : 1;
+  unsigned app_cmd : 1;
+  unsigned reserved_sd_io : 1;
+  unsigned ake_seq_error : 1;
+  unsigned reserved_3 : 1;
+  unsigned reserved_manufacturer_test_mode : 2;
+  // byte 6
+  unsigned crc : 7;
+  unsigned end_bit : 1;
+} r1_t;
 #endif  // SdInfo_h

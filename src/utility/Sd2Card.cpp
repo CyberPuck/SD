@@ -144,6 +144,71 @@ uint8_t Sd2Card::cardCommand(uint8_t cmd, uint32_t arg) {
   return status_;
 }
 //------------------------------------------------------------------------------
+/* 
+   Advanced card command, for testing the R1 response and parsing the payload.
+   The CRC7 will be calculated for the end of the message being sent.
+   NOTE: CRC7 is the CMD Byte (cmd | 0x40) plus all payload bytes (4 total since all commands are 6 bytes long).
+   # Params:
+   uint8_t cmd:  The unique CMD ID (example: CMD13 = 0x0D)
+   uint32_t arg:  32 bits representing the payload of the message.
+
+   \return uint8_trepresenting pass or fail of command
+   TODO: Update to the R1 response being returned
+*/
+r1_t Sd2Card::cardCommand2(uint8_t cmd, uint32_t arg) {
+  // Calculate the CMD byte
+  uint8_t cmdByte = cmd | 0x40;
+  // end read if in partialBlockRead mode
+  readEnd();
+
+  // select card
+  chipSelectLow();
+
+  // wait up to 300 ms if busy
+  waitNotBusy(300);
+
+  // send command
+  spiSend(cmdByte);
+
+  // send argument
+  for (int8_t s = 24; s >= 0; s -= 8) {
+    spiSend(arg >> s);
+  }
+
+  // TODO: Calculate the CRC7 of the payload
+  // NOTE: Hardcoded currently
+  // uint8_t crc = calcCRC7(cmdByte, arg);
+
+  // send CRC
+  uint8_t crc = 0XFF;
+  if (cmd == CMD0) {
+    crc = 0X95;  // correct crc for CMD0 with arg 0
+  }
+  if (cmd == CMD8) {
+    crc = 0X87;  // correct crc for CMD8 with arg 0X1AA
+  }
+  if (cmd == CMD13) {
+    crc = 0x07; // correct crc for CMD13 with 0x00 payload
+  }
+
+  // Do not send the CRC7 with CMD16
+  if (cmd != CMD16)
+  {
+    spiSend(crc);
+  }
+  // R1 Response array and byte gathering
+  uint8_t r1_array[6];
+  for (uint8_t i = 0; i < sizeof(r1_array); i++){
+    r1_array[i] = spiRec();
+  }
+  // cast the 6 byte array into the R1 Response object
+  // hard copy the contents...
+  r1_t response;
+  memcpy(&response, r1_array, sizeof(r1_array));
+
+  return response;
+}
+//------------------------------------------------------------------------------
 /**
    Determine the size of an SD flash memory card.
 
@@ -774,4 +839,106 @@ uint8_t Sd2Card::isBusy(void) {
   chipSelectHigh();
 
   return (b != 0XFF);
+}
+//------------------------------------------------------------------------------
+/** Get the R1 Reponse status of the SD Card
+
+  \return The R1 Response object.
+*/
+r1_t Sd2Card::getCardStatus(void) {
+  r1_t response = cardCommand2(CMD13, 0);
+  chipSelectHigh();
+
+  return response;
+}
+
+//------------------------------------------------------------------------------
+/** Issue a card Force Erase command.  If encrpyted the card will be reformatted
+ *  and unlocked.
+
+  \return The R1 Response object.
+*/
+r1_t Sd2Card::sendForceErase(void) {
+  uint8_t cmd = CMD16;
+  // Calculate the CMD byte
+  uint8_t cmdByte = cmd | 0x40;
+  // end read if in partialBlockRead mode
+  readEnd();
+
+  // select card
+  chipSelectLow();
+
+  // wait up to 300 ms if busy
+  waitNotBusy(300);
+
+  // send command
+  spiSend(cmdByte);
+
+  // send payload (3 bytes)
+  // send Force erase payload
+  spiSend(0x08);
+  // send CRC16 - part 1
+  spiSend(0x00);
+  // Send CRC16 - part 2 + Stop bit
+  spiSend(0x01);
+
+  // R1 Response array and byte gathering
+  uint8_t r1_array[6];
+  for (uint8_t i = 0; i < sizeof(r1_array); i++){
+    r1_array[i] = spiRec();
+  }
+  // cast the 6 byte array into the R1 Response object
+  // hard copy the contents...
+  r1_t response;
+  memcpy(&response, r1_array, sizeof(r1_array));
+
+  chipSelectHigh();
+
+  return response;
+}
+
+//------------------------------------------------------------------------------
+/** Calculate the CRC7 for a SD command, provided the command uint8_t and uint32_t argument.
+    NOTE: The command uint8_t should be the command ID | 0x40.
+
+  \return The CRC7 of the message as a uint8_t.
+*/
+uint8_t Sd2Card::calcCRC7(uint8_t cmdByte, uint32_t arg) {
+  uint8_t message[5] = {cmdByte, (arg & 0xFF), (arg >> 8) & 0xFF, (arg >> 16) & 0xFF, (arg >> 24) & 0xFF};
+  // start cmdByte
+  uint8_t remainder = cmdByte;
+  uint32_t messageLengthBits = 48;
+  // Poly given by SD Phyisical layer spec
+  const uint8_t POLYNOMINAL = 0x89;
+
+  // loop through all bits in the message
+  for(int bitIndex = 0; bitIndex < messageLengthBits; bitIndex++) {
+
+    // stop adding data from the message array if we are inside the final byte
+    if(bitIndex != 0 && bitIndex < (messageLengthBits - 8)) {
+      // tack on a bit from the next byte, if we are not at the end of the message
+      int nextByteIndex = ((bitIndex-1) / 8) + 1;
+      // get the message byte to pull from
+      // TODO:  Can this code be streamlined, its confusing
+      int nextByteBitPosition = (bitIndex + 8) % 8;
+      nextByteBitPosition = (8 - nextByteBitPosition) % 8;
+      // shift the needed value to determine if 1 or 0
+      uint8_t nextValue = (message[nextByteIndex] >> nextByteBitPosition) & 0x1;
+      // OR with remainder to add to tail
+      remainder |= nextValue;
+    }
+
+    // check if we need to XOR with polynomial with the 7th bit?
+    // NOTE: Examples online are with 0x80
+    if(remainder & 0x80) {
+      remainder ^= POLYNOMINAL;
+    }
+
+    if(bitIndex >= messageLengthBits - 1) {
+      break;
+    }
+    
+    remainder <<= 1;
+  }
+  return remainder;
 }

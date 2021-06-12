@@ -241,6 +241,8 @@ class Sd2Card {
     uint8_t writeStart(uint32_t blockNumber, uint32_t eraseCount);
     uint8_t writeStop(void);
     uint8_t isBusy(void);
+    r1_t getCardStatus(void);
+    r1_t sendForceErase(void);
   private:
     uint32_t block_;
     uint8_t chipSelectPin_;
@@ -256,6 +258,7 @@ class Sd2Card {
       return cardCommand(cmd, arg);
     }
     uint8_t cardCommand(uint8_t cmd, uint32_t arg);
+    r1_t cardCommand2(uint8_t cmd, uint32_t arg);
     void error(uint8_t code) {
       errorCode_ = code;
     }
@@ -269,5 +272,6 @@ class Sd2Card {
     uint8_t waitNotBusy(unsigned int timeoutMillis);
     uint8_t writeData(uint8_t token, const uint8_t* src);
     uint8_t waitStartBlock(void);
+    uint8_t calcCRC7(uint8_t cmdByte, uint32_t arg);
 };
 #endif  // Sd2Card_h
